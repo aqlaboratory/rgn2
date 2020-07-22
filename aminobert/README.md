@@ -12,7 +12,7 @@ Run docker. This will launch a jupyter kernel. Note you will need port-forwardin
 
 The relevant environment requirements can be gleaned by examining Dockerfile.gpu and requirements/requirements-py3.txt
 
-Next download the [AminoBERT TF checkpoint](https://drive.google.com/file/d/11DcV01Xjy1HA-nFR3HmDcFM_udWwmQ9l/view?usp=sharing). Create a directory `checkpoint` in this directory and place it in there.
+Next download the [AminoBERT TF checkpoint](https://drive.google.com/file/d/11DcV01Xjy1HA-nFR3HmDcFM_udWwmQ9l/view?usp=sharing) and unzip. Create a directory `checkpoint` in this directory and place the checkpoint files in there.
 
 Run the `Demo.ipynb` notebook. Cell 10 is where the magic happens, and is where the RGN would fit in.
 
