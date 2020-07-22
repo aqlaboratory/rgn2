@@ -1,5 +1,7 @@
 # Set up
 
+This has been tested on AWS EC2 on a p3.2xlarge (V100) instance running the Deep Learning Base AMI (Ubuntu) Version 17.0 (ami-0ff00f007c727c376).
+
 Build docker image.
 
     $ docker build -f docker/Dockerfile.gpu -t aminobert-gpu .
