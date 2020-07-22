@@ -12,6 +12,8 @@ Run docker. This will launch a jupyter kernel. Note you will need port-forwardin
 
 The relevant environment requirements can be gleaned by examining Dockerfile.gpu and requirements/requirements-py3.txt
 
+Next download the [AminoBERT TF checkpoint][https://drive.google.com/file/d/11DcV01Xjy1HA-nFR3HmDcFM_udWwmQ9l/view?usp=sharing]. Create a directory `checkpoint` in this directory and place it in there.
+
 Run the `Demo.ipynb` notebook. Cell 10 is where the magic happens, and is where the RGN would fit in.
 
 **Note:** AminoBERT will output a (batch_size, max_seq_length, hidden_state_dim=768) matrix. For the CASP predictions we've done so far, for each sequence in the batch, I've clipped the corresponding (max_seq_length, 768) matrix to be (seq_length, 768) by removing the output vector corrsponding to the CLS token (index 0), and all other output vectors after the stop char of the sequence. Just FYI as it might influence how you feed AminoBERT's output to the RGN. 
