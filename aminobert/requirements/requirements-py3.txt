@@ -1,0 +1,11 @@
+biopython==1.73
+coreapi==2.3.3
+h5py==2.9.0
+jupyter==1.0.0
+numpy==1.15.4
+pandas==0.23.4
+python-Levenshtein==0.12.0
+scikit-learn==0.20.2
+scipy==1.2.0
+seaborn==0.9.0
+awscli==1.16.96
