@@ -24,6 +24,8 @@ from glob import glob
 from copy import deepcopy
 from itertools import izip_longest
 
+
+
 # Public interface
 
 SCOPE = 'geomnet'
@@ -205,10 +207,34 @@ class GeomNetModel(object):
             else:
                 alphabet = None
 
-            # Create recurrent layer(s) that translate primary sequences into internal representation
-            recurrence_config = merge_dicts(config.initialization, config.architecture, config.regularization, config.optimization, 
-                                            config.computing, config.io)
-            recurrent_outputs, recurrent_states = _higher_recurrence(mode, recurrence_config, inputs, num_stepss, alphabet=alphabet)
+
+            # Choose a netwrok architecture: RNNs or Transformer
+
+            for case in switch(config.architecture['internal_representation']):
+                if case('transformer'): 
+
+                    #Create transformer layer(s) that translate primary sequences into internal representation
+                    transformer_config = merge_dicts(config.initialization, config.architecture, config.regularization, config.optimization)
+
+                    inputs2 = tf.transpose(inputs, perm=[1,0,2])
+                    recurrent_outputs = transformer._encoder_model(inputs2, transformer_config, mode)
+                    recurrent_outputs = tf.transpose(recurrent_outputs, perm=[1,0,2])
+
+                    # recurrent_states missing. To be added later.
+                
+                elif case('recurrent'):
+                    # Create recurrent layer(s) that translate  primary sequences into internal representation
+                    recurrence_config = merge_dicts(config.initialization, config.architecture, config.regularization, config.optimization, config.computing, config.io)
+
+                    # inputs: [NUM_STEPS, BATCH_SIZE, RECURRENT_LAYER_SIZE]
+                    # recurrent_outputs: [NUM_STEPS, BATCH_SIZE, RECURRENT_LAYER_SIZE]
+
+                    recurrent_outputs, recurrent_states = _higher_recurrence(mode, recurrence_config, inputs, num_stepss, alphabet=alphabet)
+                elif case('none'):
+                    recurrent_outputs = inputs
+                
+                else:
+                    raise ValueError('Not an available internal representation.')
 
             # Secondary and tertiary structure generation
             if config.loss['secondary_weight'] > 0:
@@ -220,16 +246,16 @@ class GeomNetModel(object):
                     prediction_ops.update({'ids': ids, 'dssps': dssps, 'num_stepss': num_stepss, 'recurrent_states': recurrent_states})
 
             if config.loss['tertiary_weight'] > 0:
-                # Convert internal representation to (thru some number of possible ways) dihedral angles
-                dihedrals_config = merge_dicts(config.initialization, config.optimization, config.architecture, config.regularization, config.io)
-                dihedrals_config.update({k: dihedrals_config[k][-1] for k in ['alphabet_keep_probability',
+                # Convert internal representation to (thru some number of possible ways) to geometrical representations, e.g., dihedrals, Frenet geometry, rotations
+                parameters_config = merge_dicts(config.initialization, config.optimization, config.architecture, config.regularization, config.io)
+                parameters_config.update({k: parameters_config[k][-1] for k in ['alphabet_keep_probability',
                                                                               'alphabet_normalization']})
-                if not dihedrals_config['single_or_no_alphabet']: dihedrals_config.update({'alphabet_size': dihedrals_config['alphabet_size'][-1]})
-                dihedrals = _dihedrals(mode, dihedrals_config, recurrent_outputs, alphabet=alphabet)
+                if not parameters_config['single_or_no_alphabet']: parameters_config.update({'alphabet_size': parameters_config['alphabet_size'][-1]})
+                parameters = _geometric_parametrization(mode, parameters_config, recurrent_outputs, alphabet=alphabet)
 
-                # Convert dihedrals into full 3D structures and compute dRMSDs
-                coordinates = _coordinates(merge_dicts(config.computing, config.optimization, config.queueing), dihedrals)
-                drmsds = _drmsds(merge_dicts(config.optimization, config.loss, config.io), coordinates, tertiaries, weights)
+                # Convert geometrical representations into full 3D structures and compute dRMSDs
+                coordinates = _coordinates(merge_dicts(config.computing, config.optimization, config.queueing, config.architecture), parameters)
+                drmsds = _drmsds(merge_dicts(config.optimization, config.loss, config.io, config.architecture), coordinates, tertiaries, weights)
 
                 if mode == 'evaluation': 
                     prediction_ops.update({'ids': ids, 'coordinates': coordinates, 'num_stepss': num_stepss, 'recurrent_states': recurrent_states})
@@ -371,7 +397,7 @@ class GeomNetModel(object):
                     prediction.update({'secondary': ''.join([DSSP_CLASSES[i] for i in secondary[:num_steps]])})
 
                 if tertiary is not None:
-                    last_atom = (num_steps - self.config.io['num_edge_residues']) * NUM_DIHEDRALS
+                    last_atom = (num_steps - self.config.io['num_edge_residues']) * self.config.architecture['num_atom_type']
                     prediction.update({'tertiary': tertiary[:, :last_atom]})
 
                 prediction.update({'recurrent_states': recurrent_states})
@@ -630,7 +656,7 @@ def _dataflow(config, max_length):
 
     tertiaries     = tf.transpose(tertiaries_batch_major,     perm=(1, 0, 2), name='tertiaries')
                      # tertiary sequences, i.e. sequences of 3D coordinates.
-                     # [(NUM_STEPS - NUM_EDGE_RESIDUES) x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS]
+                     # [(NUM_STEPS - NUM_EDGE_RESIDUES) x NUM_ATOMS, BATCH_SIZE, NUM_DIMENSIONS]
 
     masks          = tf.transpose(masks_batch_major,          perm=(1, 2, 0), name='masks')
                      # mask matrix for each datum that masks meaningless distances.
@@ -788,10 +814,10 @@ def _higher_recurrence(mode, config, inputs, num_stepss, alphabet=None):
                         layer_dssps = _dssps(layer_config, layer_recurrent_outputs)
                         layer_outputs.append(layer_dssps)
 
-                    # dihedrals
-                    if config['include_dihedrals_between_layers']:
-                        layer_dihedrals = _dihedrals(mode, layer_config, layer_recurrent_outputs, alphabet=alphabet)
-                        layer_outputs.append(layer_dihedrals)
+                    # dihedrals #Modification dihedrals to parameters
+                    if config['include_parameters_between_layers']:
+                        layer_parameters = _geometric_parametrization(mode, layer_config, layer_recurrent_outputs, alphabet=alphabet)
+                        layer_outputs.append(layer_parameters)
 
                     # skip connections from all previous layers (these will not be connected to the final linear output layer)
                     if config['all_to_recurrent_skip_connections']:
@@ -1105,8 +1131,11 @@ def _secondary_accuracy(config, dssps, targets, masks, group_filter):
 
     return accuracy
 
+
 def _alphabet(mode, config):
     """ Creates alphabet for alphabetized dihedral prediction. """
+    """ Modification: Create alphabet for alphabetized general parameterization prediction (including dihedral, torsion and curvature, quaternions, etc."""
+
 
     # prepare initializer
     if config['alphabet'] is not None:
@@ -1116,17 +1145,20 @@ def _alphabet(mode, config):
 
     # alphabet variable, possibly trainable
     alphabet = tf.get_variable(name='alphabet',
-                               shape=[config['alphabet_size'], NUM_DIHEDRALS],
+                               shape=[config['alphabet_size'], config['number_parametrization']], 
                                initializer=alphabet_initializer,
-                               trainable=config['alphabet_trainable']) # [OUTPUT_SIZE, NUM_DIHEDRALS]
+                               trainable=config['alphabet_trainable']) # [OUTPUT_SIZE, NUM_PARAMETERES]
     if mode == 'training' and config['alphabet_trainable']: 
         tf.add_to_collection(tf.GraphKeys.WEIGHTS, alphabet) # add to WEIGHTS collection if trainable
 
     return alphabet
 
-def _dihedrals(mode, config, inputs, alphabet=None):
-    """ Converts internal representation resultant from RNN output activations
-        into dihedral angles based on one of many methods. 
+
+
+
+def _geometric_parametrization(mode, config, inputs, alphabet=None):
+    """ Converts internal representation resultant from RNN or transformer output activations
+        into geometrical representations based on one of many methods. 
 
         The optional argument alphabet does not determine whether an alphabet 
         should be created or not--that's controlled by config. Instead the
@@ -1135,9 +1167,9 @@ def _dihedrals(mode, config, inputs, alphabet=None):
     is_training = (mode == 'training')
 
     # output size for linear transform layer (OUTPUT_SIZE)
-    output_size = config['alphabet_size'] if config['is_alphabetized'] else NUM_DIHEDRALS
+    output_size = config['alphabet_size'] if config['is_alphabetized'] else config['number_parametrization'] #NUM_DIHEDRALS #Modification: NUM_DIHEDRALS to parametrization
     
-    # set up non-linear dihedrals layer(s) if requested
+    # set up non-linear parameters layer(s) if requested
     nonlinear_out_proj_size = config['recurrent_nonlinear_out_proj_size']
     if nonlinear_out_proj_size is not None:
         if config['recurrent_nonlinear_out_proj_normalization'] == 'batch_normalization':
@@ -1158,7 +1190,7 @@ def _dihedrals(mode, config, inputs, alphabet=None):
         outputs = inputs
         for idx, (layer_size, init) in enumerate(zip(nonlinear_out_proj_size, config['recurrent_nonlinear_out_proj_init'])):
             recurrent_nonlinear_out_proj_init = dict_to_inits(init, config['recurrent_nonlinear_out_proj_seed'])
-            outputs = layers.fully_connected(outputs, layer_size, scope='nonlinear_dihedrals_' + str(idx), 
+            outputs = layers.fully_connected(outputs, layer_size, scope='nonlinear_parameters_' + str(idx), 
                                              activation_fn=nonlinear_out_proj_fn, 
                                              normalizer_fn=nonlinear_out_proj_normalization_fn, 
                                              normalizer_params=nonlinear_out_proj_normalization_fn_opts,
@@ -1166,15 +1198,15 @@ def _dihedrals(mode, config, inputs, alphabet=None):
                                              biases_initializer=recurrent_nonlinear_out_proj_init['bias'], 
                                              outputs_collections=config['name'] + '_' + tf.GraphKeys.ACTIVATIONS, 
                                              variables_collections={'weights': [tf.GraphKeys.WEIGHTS], 'biases': [tf.GraphKeys.BIASES]})
-        dihedrals_inputs = outputs
+        parameter_inputs = outputs 
         # [NUM_STEPS, BATCH_SIZE, NONLINEAR_DIHEDRALS_LAYER_SIZE]
     else:
-        dihedrals_inputs = inputs
+        parameter_inputs = inputs  
         # [NUM_STEPS, BATCH_SIZE, N x RECURRENT_LAYER_SIZE] where N is 1 or 2 depending on bidirectionality
 
     # set up linear transform variables
     recurrent_out_proj_init = dict_to_inits(config['recurrent_out_proj_init'], config['recurrent_out_proj_seed'])
-    linear = layers.fully_connected(dihedrals_inputs, output_size, activation_fn=None, scope='linear_dihedrals',
+    linear = layers.fully_connected(parameter_inputs, output_size, activation_fn=None, scope='linear_parameters',     # Modification dihedral_inputs to parameters_input
                                     weights_initializer=recurrent_out_proj_init['base'], biases_initializer=recurrent_out_proj_init['bias'],
                                     variables_collections={'weights': [tf.GraphKeys.WEIGHTS], 'biases': [tf.GraphKeys.BIASES]}, 
                                     outputs_collections=config['name'] + '_' + tf.GraphKeys.ACTIVATIONS)
@@ -1196,7 +1228,7 @@ def _dihedrals(mode, config, inputs, alphabet=None):
             linear = layers.layer_norm(linear, center=True, scale=True,
                                        scope='alphabet_layer_norm', outputs_collections=config['name'] + '_' + tf.GraphKeys.ACTIVATIONS)
 
-        # softmax for linear to create angle mixtures
+        # softmax for linear to create parameter mixtures
         flattened_linear = tf.reshape(linear, [-1, output_size])                               # [NUM_STEPS x BATCH_SIZE, OUTPUT_SIZE]
         probs = tf.nn.softmax(flattened_linear / config['alphabet_temperature'], name='probs') # [NUM_STEPS x BATCH_SIZE, OUTPUT_SIZE]      
         tf.add_to_collection(config['name'] + '_' + tf.GraphKeys.ACTIVATIONS, probs)
@@ -1205,34 +1237,58 @@ def _dihedrals(mode, config, inputs, alphabet=None):
         if mode == 'training' and config['alphabet_keep_probability'] < 1:
             probs = tf.nn.dropout(probs, config['alphabet_keep_probability'], seed=config['dropout_seed'], name='dropped_probs')
 
-        # form final dihedrals based on mixture of alphabetized angles
+        # form final parameters based on mixture of alphabetized parameters
         num_steps = tf.shape(linear)[0]
         batch_size = linear.get_shape().as_list()[1]
-        flattened_dihedrals = reduce_mean_angle(probs, alphabet)                            # [NUM_STEPS x BATCH_SIZE, NUM_DIHEDRALS]
-        dihedrals = tf.reshape(flattened_dihedrals, [num_steps, batch_size, NUM_DIHEDRALS]) # [NUM_STEPS, BATCH_SIZE, NUM_DIHEDRALS]
+        flattened_parameters = reduce_mean_angle(probs, alphabet)                            # [NUM_STEPS x BATCH_SIZE, NUM_PARAMETERS]
+        parameters = tf.reshape(flattened_parameters, [num_steps, batch_size, config['number_parametrization']]) # [NUM_STEPS, BATCH_SIZE, NUM_PARAMETERS]
+
     else:
         # just linear
-        dihedrals = linear
+        parameters = linear
 
         # angularize if specified
-        if config['is_angularized']: dihedrals = angularize(dihedrals)
+        if config['is_angularized']: parameters = angularize(parameters)
     # [NUM_STEPS, BATCH_SIZE, NUM_DIHEDRALS] (for both cases)
 
-    # add angle shift
-    dihedrals = tf.add(dihedrals, tf.constant(config['angle_shift'], dtype=tf.float32, name='angle_shift'), name='dihedrals')
+    
+    #Modification: I think the following is not needed, as angle_shift is adding a vanishing angle
+    #parameters = tf.add(parameters, tf.constant(config['angle_shift'], dtype=tf.float32, name='angle_shift'), name='dihedrals')
+    #parameters = tf.add(parameters, tf.constant(config['angle_shift'], dtype=tf.float32, name='angle_shift'))
 
-    return dihedrals
+    return parameters
 
-def _coordinates(config, dihedrals):
+def _coordinates(config, parameters):
     """ Converts dihedrals into full 3D structures. """
 
+    
     # converts dihedrals to points ready for reconstruction.
-    points = dihedral_to_point(dihedrals) # [NUM_STEPS x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS]
+    #points = dihedral_to_point(parameters) # [NUM_STEPS x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS]
              
     # converts points to final 3D coordinates.
-    coordinates = point_to_coordinate(points, num_fragments=config['num_reconstruction_fragments'], 
-                                              parallel_iterations=config['num_reconstruction_parallel_iters']) 
+    #coordinates = point_to_coordinate(points, num_fragments=config['num_reconstruction_fragments'], 
+    #                                          parallel_iterations=config['num_reconstruction_parallel_iters']) 
                   # [NUM_STEPS x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS]
+
+    #return coordinates
+
+
+    """ Converts angles into full 3D structures. """
+
+    #converts angles to 3D coordinates.
+    
+    for case in switch(config['angle_type']):
+        if case('dihedrals'):
+            points = dihedral_to_point(parameters) # [NUM_STEPS x NUM_ATOM_TYPE, BATCH_SIZE, NUM_DIMENSIONS]
+            coordinates = point_to_coordinate(points, num_fragments=config['num_reconstruction_fragments'],
+                                                      parallel_iterations=config['num_reconstruction_parallel_iters']) # [NUM_STEPS x ATOM_TYPE, BATCH_SIZE, NUM_DIMENSIONS]
+        elif case('torsions_and_curvatures'):
+            rotation_translation = torsion_and_curvature_to_rotation_translation(parameters) # [NUM_STEPS, BATCH_SIZE, NUM_DIMENSIONS]
+            #coordinates = simple_static_rotation_translation_to_coordinate(rotation_translation, max_num_steps=config['num_steps'])
+            coordinates = simple_dynamic_rotation_translation_to_coordinate(rotation_translation, parallel_iterations=config['num_reconstruction_parallel_iters'])
+        else:
+            raise ValueError ('Angle to final 3D coordinates conversion is not available')
+    
 
     return coordinates
 
@@ -1242,14 +1298,48 @@ def _drmsds(config, coordinates, targets, weights):
 
     # lose end residues if desired
     if config['num_edge_residues'] > 0:
-        coordinates = coordinates[:-(config['num_edge_residues'] * NUM_DIHEDRALS)]
+        coordinates = coordinates[:-(config['num_edge_residues'] * config['num_atom_type'])]
 
     # if only c_alpha atoms are requested then subsample
-    if config['atoms'] == 'c_alpha': # starts at 1 because c_alpha atoms are the second atoms
-        coordinates = coordinates[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
-        targets     =     targets[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
-                  
-    # compute per structure dRMSDs
+    # if config['atoms'] == 'c_alpha': # starts at 1 because c_alpha atoms are the second atoms
+    #     coordinates = coordinates[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+    #     targets     =     targets[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+     
+    for case in switch (config['angle_type']):
+        if case ('dihedrals'):
+            coordinates = coordinates[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+            targets     =     targets[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+      
+        elif case ('torsions_and_curvatures'):
+            #coordinates = tf.identity(coordinates)#[:-(config['num_edge_residues'])]
+            #coordinates = coordinates[1:]
+            targets     = targets[1::NUM_DIHEDRALS]   
+        else:
+            raise ValueError ('drmds are not available')
+
+    
+
+
+    #Modification: NUM_ATOM_TYPE = 3 for C_alpha, C and N or NUM_ATOM_TYPE = 1 for C_alphe
+
+    
+    # lose end residues if desired
+
+    # for case in switch (config['angle_type']):
+    #     if case ('dihedrals'):
+    #         if config['num_edge_residues'] > 0:
+    #             coordinates = coordinates[:-(config['num_edge_residues'] * NUM_DIHEDRALS)]
+
+    # # if only c_alpha atoms are requested then subsample
+    #         if config['atoms'] == 'c_alpha': # starts at 1 because c_alpha atoms are the second atoms
+    #            coordinates = coordinates[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+    #            targets     =     targets[1::NUM_DIHEDRALS] # [NUM_STEPS - NUM_EDGE_RESIDUES, BATCH_SIZE, NUM_DIMENSIONS]
+    #     if case ('torsions_and_curvatures'):
+    #         if config['num_edge_residues'] > 0:
+    #            coordinates = coordinates[:-(config['num_edge_residues'])]
+    #            targets     = targets[1::NUM_DIHEDRALS]              
+    # #compute per structure dRMSDs
+
     drmsds = drmsd(coordinates, targets, weights, name='drmsds') # [BATCH_SIZE]
 
     # add to relevant collections for summaries, etc.

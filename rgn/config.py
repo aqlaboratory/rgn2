@@ -143,7 +143,7 @@ class GeomNetConfig(Config):
                              'higher_order_layers':                      str_or_bool(config.get('higherOrderLayers',                    False)),
                              'include_recurrent_outputs_between_layers': str_or_bool(config.get('includeRecurrentOutputsBetweenLayers', True)), # HO
                              'include_dssps_between_layers':             str_or_bool(config.get('includeDSSPsBetweenLayers',            False)), # HO
-                             'include_dihedrals_between_layers':         str_or_bool(config.get('includeDihedralsBetweenLayers',        False)), # HO
+                             'include_parameters_between_layers':        str_or_bool(config.get('includeParametersBetweenLayers',        False)), # HO #Modification dihedrals to paramters
                              'residual_connections_every_n_layers':      int_or_none(config.get('residualConnectionsEveryNLayers',      None)), # HO
                              'first_residual_connection_from_nth_layer': int_or_none(config.get('firstResidualConnectionFromNthLayer',  1)), # HO
                              'recurrent_to_output_skip_connections':     str_or_bool(config.get('recurrentToOutputSkipConnections',     False)), # HO
@@ -163,7 +163,15 @@ class GeomNetConfig(Config):
                              'alphabet_size':                            eval_if_str(config.get('alphabetSize',                         None)), # pHO
                              'alphabet_trainable':                       str_or_bool(config.get('alphabetTrainable',                    True)),
                              'include_primary':                          str_or_bool(config.get('includePrimary',                       True)),
-                             'include_evolutionary':                     str_or_bool(config.get('includeEvolutionary',                  False))}
+                             'include_evolutionary':                     str_or_bool(config.get('includeEvolutionary',                  False)),
+                             'internal_representation':                              config.get('internalRepresentation',              'recurrent'),
+
+                             # Extended Geomtrical Representations
+                             'number_parametrization':                           int(config.get('numberParametrization',                    2)), 
+                             'model_parametrization':                                config.get('modelParametrization',                'angles'),
+                             'num_atom_type':                                    int(config.get('numberAtomType',                           1)),
+                             'angle_type':                                           config.get('angleType',                           'torsions_and_curvatures')}
+                             
 
         # regularization
         self.regularization = {'recurrent_input_keep_probability':           eval_if_str(config.get('recurInKeepProb',                    1.0)),

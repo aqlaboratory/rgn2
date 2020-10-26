@@ -21,10 +21,11 @@ import tensorflow as tf
 import collections
 
 # Constants
-NUM_DIMENSIONS = 3 # x, y, z
-NUM_DIHEDRALS = 3 # omega, phi, psi
-BOND_LENGTHS = np.array([145.801, 152.326, 132.868], dtype='float32') # N-CA, CA-C, C-N
-BOND_ANGLES  = np.array([  2.124,   1.941,   2.028], dtype='float32') # C-N-CA, N-CA-C, CA-C-N
+NUM_DIMENSIONS = 3
+NUM_DIHEDRALS = 3
+BOND_LENGTHS = np.array([145.801, 152.326, 132.868], dtype='float32')
+BOND_ANGLES  = np.array([  2.124,   1.941,   2.028], dtype='float32')
+C_ALPHA_LENGTH = 380
 
 # Functions
 def angularize(input_tensor, name=None):
@@ -33,7 +34,23 @@ def angularize(input_tensor, name=None):
     with tf.name_scope(name, 'angularize', [input_tensor]) as scope:
         input_tensor = tf.convert_to_tensor(input_tensor, name='input_tensor')
     
-        return tf.multiply(np.pi, tf.cos(input_tensor + (np.pi / 2)), name=scope)
+        #return tf.multiply(np.pi, tf.cos(input_tensor + (np.pi / 2)), name=scope)
+
+def angularize_different_angles(input_tensor, name=None):
+    """Restricts real-valued tensors to the intervals [-pi,pi] and [0,pi] by feeding them through a cosine"""
+
+    with tf.name_scope(name, 'angularize_different_angles', [input_tensor]) as scope:
+        input_tensor = tf.convert_to_tensor(input_tensor, name ='input_tensor')
+
+        input_tensor_x, input_tensor_y = tf.unstack(input_tensor, axis=-1)
+        input_tensor_x = tf.multiply(np.pi, tf.cos(input_tensor + (np.pi / 2)), name=scope)
+        input_tensor_y = tf.multiply(np.pi, tf.math.abs(tf.cos(input_tensor + (np.pi / 2))), name=scope)
+
+        angles = tf.stack(input_tensor_x, input_tensor_y, axis=-1)
+        angles = tf.reshape(angles, shape=input_shape)
+
+        return angles 
+
 
 def reduce_mean_angle(weights, angles, use_complex=False, name=None):
     """ Computes the weighted mean of angles. Accepts option to compute use complex exponentials or real numbers.
@@ -113,7 +130,7 @@ def reduce_l1_norm(input_tensor, reduction_indices=None, keep_dims=None, weights
         return tf.reduce_sum(input_tensor, axis=reduction_indices, keep_dims=keep_dims, name=scope)
 
 def dihedral_to_point(dihedral, r=BOND_LENGTHS, theta=BOND_ANGLES, name=None):
-    """ Takes triplets of dihedral angles (omega, phi, psi) and returns 3D points ready for use in
+    """ Takes triplets of dihedral angles (phi, psi, omega) and returns 3D points ready for use in
         reconstruction of coordinates. Bond lengths and angles are based on idealized averages.
 
     Args:
@@ -232,6 +249,171 @@ def point_to_coordinate(pt, num_fragments=6, parallel_iterations=4, swap_memory=
         coords = tf.pad(coords_trans[:s-1], [[1, 0], [0, 0], [0, 0]], name=scope) # [NUM_STEPS x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS]
 
         return coords
+
+#Modification: functions for C_Alpha geometry
+
+def torsion_and_curvature_to_rotation_translation(parameters, r=C_ALPHA_LENGTH, name=None):
+
+
+    """ Takes torsion and curvature angles (psi $equiv$ x and theta $equiv$ y) and returns a rotation and translation matrix (based on Niemi et al. 2011). Earlier discussion see Flory, P., & Volkenstein, M. (1969). Statistical mechanics of chain molecules. Biopolymers, 8(5), 699-700. 
+    Following code based on tensorflow graphics
+
+    Args:
+        parameters: [NUM_STEPS, BATCH_SIZE, NUMBER_PARAMETERS = 2]
+
+    Returns:
+                    [NUM_STEPS, BATCH_SIZE, 4, 4], where (4, 4) correspond to rotation and translation 
+    """
+
+    with tf.name_scope(name, 'torsion_and_curvature_to_rotation_translation', [parameters]) as scope:
+        parameters = tf.convert_to_tensor(parameters, name=parameters) # [NUM_STEPS, BATCH_SIZE, NUMBER_PARAMETERS] NP=2
+
+        num_steps  = tf.shape(parameters)[0]
+        batch_size = parameters.get_shape().as_list()[1] # important to use get_shape() to keep batch_size fixed for performance reasons
+
+        sins = tf.sin(parameters) # [NUM_STEPS, BATCH_SIZE, NUM_PARAMETERS =2]
+        coss = tf.cos(parameters) # [NUM_STEPS, BATCH_SIZE, NUM_PARAMETERS =2]
+
+        sins.shape.assert_is_compatible_with(coss.shape)
+
+
+        sx, sy = tf.unstack(sins, axis=-1)
+        cx, cy = tf.unstack(coss, axis=-1)
+        
+        # # or use the following
+        # sx = sins[:,:,:1]
+        # sy = sins[:,:,1:]
+
+        # cx = coss[:,:,:1]
+        # cy = coss[:,:,1:]
+
+        m00 = cy * cx
+        m01 = cx * sy
+        m02 = -sx
+        m03 = tf.zeros_like(sx)
+        m10 = -sy 
+        m11 = cy 
+        m12 = tf.zeros_like(sx)
+        m13 = tf.zeros_like(sx)
+        m20 = sx * cy
+        m21 = sx * sy 
+        m22 = cx
+        m23 = tf.zeros_like(sx)
+        m30 = tf.zeros_like(sx)
+        m31 = tf.zeros_like(sx)
+        m32 = tf.ones_like(sx) * r
+        m33 = tf.ones_like(sx)
+
+       
+
+        matrix = tf.stack((m00, m01, m02, m03,
+                     m10, m11, m12, m13,
+                     m20, m21, m22, m23,
+                     m30, m31, m32, m33),
+                    axis=-1)  # pyformat: disable
+        #tf.transpose(obj, [2,3,0,1])
+
+        output_shape = tf.concat((tf.shape(input=parameters)[:-1], (4, 4)), axis=-1)
+        matrix = tf.reshape(matrix, shape=output_shape)      # [NUM_STEPS, BATCH_SIZE, 4, 4], CHECK, in shape I might still have 2 for NUM_PARAMETERS
+        matrix_final = tf.reshape(matrix, [num_steps, batch_size, 4, 4], name=scope)  # [NUM_STEPS, BATCH_SIZE, 4, 4]
+
+        return matrix_final # [NUM_STEPS, BATCH_SIZE, 4, 4]
+
+
+
+def simple_static_rotation_translation_to_coordinate(rotation_translation, max_num_steps, name=None):
+    """ Takes rotation and translation from torsion_and_curvature_to_rotation_translation and sequentially converts them into the coordinates of a 3D structure.
+    
+    `   Simple_static follow MAQ pnerf: his version of the function statically unrolls the reconstruction layer to max_num_steps, and proceeds to
+        reconstruct every residue without any conditionals for early exit. Note that it automatically pads and 
+        unpads the input tensor to give back its original lenght
+    
+    Args:
+        rotation_translation: [NUM_STEPS, BATCH_SIZE, 4, 4]
+
+
+    Returns:  
+        coordinates:       [NUM_STEPS, BATCH_SIZE, NUM_DIMENSIONS = 3] 
+
+
+    """
+
+    with tf.name_scope(name, 'simple_static_rotation_translation_to_coordinate', [rotation_translation]) as scope:
+        rotation_translation = tf.convert_to_tensor(rotation_translation)
+
+        # pad to maximum length
+        cur_num_rotation_steps = tf.shape(rotation_translation)[0]
+        cur_num_rotation_steps = tf.identity(cur_num_rotation_steps, name='cur_num_rotation_steps')
+        batch_size = rotation_translation.get_shape().as_list()[1]
+        rotation_translation = tf.pad(rotation_translation, [[0, max_num_steps - cur_num_rotation_steps], [0, 0], [0, 0], [0,0]]) #TO DISCUSS WITH MAQ to match rot_trans shape
+        rotation_translation.set_shape(tf.TensorShape([max_num_steps, batch_size, 4,4])) #CHECK parenthesis for shape in 4,4
+
+        rotation_translation = tf.identity(rotation_translation, name='rotation_translation')
+
+        # initial coordinates for Frenet systems with 4 vectors: normal (n), binormal (b), tangent (t) vectors and C_alpha coordinates (r)
+        
+        initial_frame = np.identity(NUM_DIMENSIONS, dtype='float32') 
+        initial_coordinate = np.array([[0,0,0]], dtype='float32')
+        initial_frame_coordinate = np.concatenate((initial_frame, initial_coordinate), axis=0) #[4x3]
+        
+        frames = [tf.tile(initial_frame_coordinate[tf.newaxis], [batch_size, 1, 1])] 
+
+        # loop over NUM_STEPS, sequentially generating the coordinates for the whole batch
+        for rot_trans in tf.unstack(rotation_translation, name='rot_trans'):      # (NUM_STEPS) x [BATCH_SIZE, 4, 4]
+            new_frame = tf.matmul(rot_trans, frames[-1]) # ADD coordinates in matrix multiplication [BATCH_SIZE,  4, 3]
+            frames.append(new_frame)   # NUM_STEPS x 4 X [BATCH_SIZE, NUM_DIMENSIONS] 
+
+        frames = tf.convert_to_tensor(frames, name='frames')
+        
+        coords = frames[1:,:,-1]
+
+        coords = tf.identity(coords[:cur_num_rotation_steps], name='coords2')
+
+        return coords
+
+
+def simple_dynamic_rotation_translation_to_coordinate(rotation_translation, parallel_iterations = 4, swap_memory=False, name=None):
+    """ Takes torsion_and_curvature_to_rotation_translation and sequentially converts them into the coordinates of a 3D structure.
+    
+        This version of the function dynamically reconstructs the coordinatess one atomic coordinate at a time.
+        It is less efficient than the version that uses a fixed number of atomic coordinates, but the code is 
+        much cleaner here.
+    Args:
+        rotation_translation: [NUM_STEPS, BATCH_SIZE, 4, 4]
+
+    Returns:
+        coordinates:       [NUM_STEPS, BATCH_SIZE, NUM_DIMENSIONS = 3] 
+    """                             
+
+    with tf.name_scope(name, 'simple_dynamic_rotation_translation_to_coordinate', [rotation_translation]) as scope:
+        rotation_translation = tf.convert_to_tensor(rotation_translation)
+
+
+        batch_size = rotation_translation.get_shape().as_list()[1]
+        
+
+        #initial coordinates for Frenet systems with 4 vectors: normal (n), binormal (b), tangent (t) vectors and C_alpha coordinates (r)
+        initial_frame = np.identity(NUM_DIMENSIONS, dtype='float32') 
+        initial_coordinate = np.array([[0,0,0]], dtype='float32')
+        initial_frame_coordinate = np.concatenate((initial_frame, initial_coordinate), axis=0) #[4x3]
+        initial_frame_coordinate = tf.tile(initial_frame_coordinate[tf.newaxis], [batch_size, 1, 1])
+        
+        # loop over NUM_STEPS x NUM_DIHEDRALS, sequentially generating the coordinates for the whole batch
+        i = tf.constant(1)
+        s = tf.shape(rotation_translation)[0]
+        coords_ta = tf.TensorArray(tf.float32, size=s, tensor_array_name='coordinates_array')
+        
+        def body(i, frame, coords_ta): # (NUM_STEPS x NUM_DIHEDRALS) x [BATCH_SIZE, NUM_DIMENSIONS] 
+            new_frame = tf.matmul(rotation_translation[i - 1], frame) 
+            return [i + 1, new_frame, coords_ta.write(i, new_frame)]
+            
+        _, _, coords = tf.while_loop(lambda i, _1, _2: i < s, body, 
+                                     [i, initial_frame_coordinate, coords_ta.write(0, initial_frame_coordinate)],
+                                     parallel_iterations=parallel_iterations, swap_memory=swap_memory)
+                       # [NUM_STEPS x NUM_DIHEDRALS, BATCH_SIZE, NUM_DIMENSIONS] 
+
+        return coords.stack(name=scope)[:, :, -1]
+
 
 def drmsd(u, v, weights, name=None):
     """ Computes the dRMSD of two tensors of vectors.
