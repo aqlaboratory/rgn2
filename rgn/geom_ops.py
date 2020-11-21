@@ -34,7 +34,7 @@ def angularize(input_tensor, name=None):
     with tf.name_scope(name, 'angularize', [input_tensor]) as scope:
         input_tensor = tf.convert_to_tensor(input_tensor, name='input_tensor')
     
-        #return tf.multiply(np.pi, tf.cos(input_tensor + (np.pi / 2)), name=scope)
+        return tf.multiply(np.pi, tf.cos(input_tensor + (np.pi / 2)), name=scope)
 
 def angularize_different_angles(input_tensor, name=None):
     """Restricts real-valued tensors to the intervals [-pi,pi] and [0,pi] by feeding them through a cosine"""
