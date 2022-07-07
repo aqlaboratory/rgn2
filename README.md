@@ -1,4 +1,4 @@
-# rgn2
+# RGN2
 
 This is the reference implementation of recurrent geometric network-2 (RGN2), described in the paper [Single-sequence protein structure prediction using a language model and deep learning]
 
