@@ -2,7 +2,7 @@
 
 This is the reference implementation of recurrent geometric network-2 (RGN2), described in the paper [Single-sequence protein structure prediction using a language model and deep learning]
 
-* Python 3
+* Python 2.7
 * TensorFlow >= 1.4 (tested up to 1.12)
 * setproctitle
 
