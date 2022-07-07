@@ -155,7 +155,7 @@ def predict_and_log(log_dir, configs, models, session):
     # assumes that the validation reference designation (wt vs. unwt) can be used for the training and test sets as well
     val_ref_set_prefix = 'un' if configs['run'].optimization['validation_reference'] == 'unweighted' else ''
 
-    for label, model in models.iteritems():
+    for label, model in models.items():
         if 'eval' in label:
             generate = True
 
@@ -174,7 +174,7 @@ def predict_and_log(log_dir, configs, models, session):
 
                 for _ in range(configs[label].queueing['num_evaluation_invocations']):
                     dicts = model.predict(session)
-                    for idx, dict_ in dicts.iteritems():
+                    for idx, dict_ in dicts.items():
                         if 'secondary' in dict_:
                             with open(os.path.join(outputs_dir, idx + '.secondary'), 'w') as f: f.write(dict_['secondary'])
                         if 'tertiary'  in dict_:
@@ -440,7 +440,7 @@ def loop(args):
                     # restart if a milestone is missed
                     val_ref_set_prefix = 'un' if configs['run'].optimization['validation_reference'] == 'unweighted' else ''
                     min_loss_achieved = diagnostics[val_ref_set_prefix + 'wt_val_loss']['min_tertiary_loss_achieved_all']
-                    for step, loss in configs['run'].optimization['validation_milestone'].iteritems():
+                    for step, loss in configs['run'].optimization['validation_milestone'].items():
                         if global_step >= step and min_loss_achieved > loss:
                             raise MilestoneError('Milestone at step ' + str(global_step) + \
                                                  ' missed because minimum loss achieved so far is ' + str(min_loss_achieved))

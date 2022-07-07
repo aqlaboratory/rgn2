@@ -22,7 +22,7 @@ from net_ops import *
 from utils import *
 from glob import glob
 from copy import deepcopy
-from itertools import izip_longest
+from itertools import zip_longest
 
 
 
@@ -265,7 +265,7 @@ class GeomNetModel(object):
                 filters = {grp: id_filter(ids, grp) for grp in config.io['evaluation_sub_groups']} if mode == 'evaluation' else {}
                 filters.update({'all': tf.tile([True], tf.shape(ids))})
 
-                for group_id, group_filter in filters.iteritems():
+                for group_id, group_filter in filters.items():
                     with tf.variable_scope(group_id):
                         # Secondary loss
                         effective_secondary_loss = 0.
@@ -384,12 +384,12 @@ class GeomNetModel(object):
             prediction_dict = ops_to_dict(session, self._prediction_ops)
 
             # process secondary and tertiary sequences
-            if prediction_dict.has_key('dssps'): prediction_dict['dssps'] = np.transpose(np.argmax(prediction_dict['dssps'], 2))
-            if prediction_dict.has_key('coordinates'): prediction_dict['coordinates'] = np.transpose(prediction_dict['coordinates'], (1, 2, 0))
+            if 'dssps' in prediction_dict: prediction_dict['dssps'] = np.transpose(np.argmax(prediction_dict['dssps'], 2))
+            if 'coordinates' in prediction_dict: prediction_dict['coordinates'] = np.transpose(prediction_dict['coordinates'], (1, 2, 0))
 
             # generate return dict
             predictions = {}
-            for id_, num_steps, secondary, tertiary, recurrent_states in izip_longest(*[prediction_dict.get(key, []) 
+            for id_, num_steps, secondary, tertiary, recurrent_states in zip_longest(*[prediction_dict.get(key, []) 
                                                                                         for key in ['ids', 'num_stepss', 'dssps', 'coordinates', 'recurrent_states']]):
                 prediction = {}
 
@@ -581,7 +581,7 @@ def _device_function_constructor(functions_on_devices={}, default_device=''):
 
     def device_function(op):
         # note that one can't depend on ordering of items in dicts due to their indeterminancy
-        for device, funcs in functions_on_devices.iteritems():
+        for device, funcs in functions_on_devices.items():
             if any(((func in op.name) or any(func in node.name for node in op.inputs)) for func in funcs):
                 return device
         else:
@@ -1425,7 +1425,7 @@ def _training(config, loss):
                       'momentum': tf.train.MomentumOptimizer,
                       'adagrad': tf.train.AdagradOptimizer,
                       'adadelta': tf.train.AdadeltaOptimizer}[config['optimizer']]
-    optimizer_params = config.viewkeys() & set(optimizer_args(optimizer_func))
+    optimizer_params = config.keys() & set(optimizer_args(optimizer_func))
     optimizer_params_and_values = {param: config[param] for param in optimizer_params}
     optimizer = optimizer_func(**optimizer_params_and_values)
 

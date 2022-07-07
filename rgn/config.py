@@ -5,9 +5,9 @@ from ast import literal_eval
 # helper functions
 flt_or_none = lambda x: float(x) if x is not None else None
 int_or_none = lambda x: int(x) if x is not None else None
-str_or_none = lambda x: None if isinstance(x, basestring) and x == 'none' else x
-str_or_bool = lambda x: (x == 'true' or x == 'True') if isinstance(x, basestring) else x
-eval_if_str = lambda x: literal_eval(x) if isinstance(x, basestring) else x
+str_or_none = lambda x: None if isinstance(x, str) and x == 'none' else x
+str_or_bool = lambda x: (x == 'true' or x == 'True') if isinstance(x, str) else x
+eval_if_str = lambda x: literal_eval(x) if isinstance(x, str) else x
 
 def dict_import(file):
     """ Imports configuration dictionary from disk """
@@ -144,7 +144,7 @@ class GeomNetConfig(Config):
                              'include_recurrent_outputs_between_layers': str_or_bool(config.get('includeRecurrentOutputsBetweenLayers', True)), # HO
                              'include_dssps_between_layers':             str_or_bool(config.get('includeDSSPsBetweenLayers',            False)), # HO
                              'include_parameters_between_layers':        str_or_bool(config.get('includeParametersBetweenLayers',        False)), # HO #Modification dihedrals to paramters
-                             'residual_connections_every_n_layers':      int_or_none(config.get('residualConnectionsEveryNLayers',      None)), # HO
+                             'residual_connections_every_n_layers':      int_or_none(config.get('residualConnectionsEveryNLayers',      0)), # HO
                              'first_residual_connection_from_nth_layer': int_or_none(config.get('firstResidualConnectionFromNthLayer',  1)), # HO
                              'recurrent_to_output_skip_connections':     str_or_bool(config.get('recurrentToOutputSkipConnections',     False)), # HO
                              'input_to_recurrent_skip_connections':      str_or_bool(config.get('inputToRecurrentSkipConnections',      False)), # HO

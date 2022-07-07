@@ -155,7 +155,7 @@ def predict_and_log(log_dir, configs, models, session):
     # assumes that the validation reference designation (wt vs. unwt) can be used for the training and test sets as well
     val_ref_set_prefix = 'un' if configs['run'].optimization['validation_reference'] == 'unweighted' else ''
 
-    for label, model in models.iteritems():
+    for label, model in models.items():
         if 'eval' in label:
             generate = True
 
@@ -174,13 +174,13 @@ def predict_and_log(log_dir, configs, models, session):
 
                 for _ in range(configs[label].queueing['num_evaluation_invocations']):
                     dicts = model.predict(session)
-                    for idx, dict_ in dicts.iteritems():
+                    for idx, dict_ in dicts.items():
                         if 'secondary' in dict_:
-                            with open(os.path.join(outputs_dir, idx + '.secondary'), 'w') as f: f.write(dict_['secondary'])
+                            with open(os.path.join(outputs_dir, idx.decode('UTF-8') + '.secondary'), 'w') as f: f.write(dict_['secondary'])
                         if 'tertiary'  in dict_:
-                            np.savetxt(os.path.join(outputs_dir, idx + '.tertiary'), dict_['tertiary'], header='\n')
+                            np.savetxt(os.path.join(outputs_dir, idx.decode('UTF-8') + '.tertiary'), dict_['tertiary'], header='\n')
                         if 'recurrent_states' in dict_:
-                            np.savetxt(os.path.join(outputs_dir, idx + '.recurrent_states'), dict_['recurrent_states'])
+                            np.savetxt(os.path.join(outputs_dir, idx.decode('UTF-8') + '.recurrent_states'), dict_['recurrent_states'])
 
 def loop(args):
     # create config and model collection objects, and retrieve the run config
@@ -194,8 +194,10 @@ def loop(args):
 
     # derived files and directories
     base_dir        = args.base_directory
-    run_dir         = os.path.join(base_dir, RUNS_DIRNAME,        configs['run'].names['run'], configs['run'].names['dataset'])
-    data_dir        = os.path.join(base_dir, DATAS_DIRNAME,       configs['run'].names['dataset'])
+    #run_dir         = os.path.join(base_dir, RUNS_DIRNAME,        configs['run'].names['run'], configs['run'].names['dataset'])
+    #data_dir        = os.path.join(base_dir, DATAS_DIRNAME,       configs['run'].names['dataset'])
+    run_dir         = os.path.join(base_dir, RUNS_DIRNAME,        configs['run'].names['run'])
+    data_dir        = os.path.join(base_dir, DATAS_DIRNAME)
     checkpoints_dir = os.path.join(run_dir,  CHECKPOINTS_DIRNAME, '')
     logs_dir        = os.path.join(run_dir,  LOGS_DIRNAME,        '')
     stdout_err_file = os.path.join(base_dir, LOGS_DIRNAME,        configs['run'].names['run'] + '.log')
@@ -211,7 +213,8 @@ def loop(args):
     validation_batch_size  = configs['run'].evaluation['num_validation_samples']
     validation_invocations = configs['run'].evaluation['num_validation_invocations']
 
-    testing_glob           = os.path.join(data_dir, FULL_TESTING_DIRNAME,      configs['run'].io['full_testing_glob'])
+    #testing_glob           = os.path.join(data_dir, FULL_TESTING_DIRNAME,      configs['run'].io['full_testing_glob'])
+    testing_glob           = os.path.join(data_dir,  configs['run'].io['full_testing_glob'])
     testing_batch_size     = configs['run'].evaluation['num_testing_samples']
     testing_invocations    = configs['run'].evaluation['num_testing_invocations']
 
@@ -441,7 +444,7 @@ def loop(args):
                     # restart if a milestone is missed
                     val_ref_set_prefix = 'un' if configs['run'].optimization['validation_reference'] == 'unweighted' else ''
                     min_loss_achieved = diagnostics[val_ref_set_prefix + 'wt_val_loss']['min_tertiary_loss_achieved_all']
-                    for step, loss in configs['run'].optimization['validation_milestone'].iteritems():
+                    for step, loss in configs['run'].optimization['validation_milestone'].items():
                         if global_step >= step and min_loss_achieved > loss:
                             raise MilestoneError('Milestone at step ' + str(global_step) + \
                                                  ' missed because minimum loss achieved so far is ' + str(min_loss_achieved))
@@ -485,7 +488,7 @@ def loop(args):
                 old_seed = configs['training'].initialization['graph_seed']
                 new_seed = old_seed + args.seed_increment
                 for line in fileinput.input(args.config_file, inplace=True):
-                    print line.replace('randSeed ' + str(old_seed), 'randSeed ' + str(new_seed)),
+                    print(line.replace('randSeed ' + str(old_seed), 'randSeed ' + str(new_seed)))
                 
                 restart = True
             else:
