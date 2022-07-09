@@ -6,7 +6,7 @@ This is the reference implementation of recurrent geometric network-2 (RGN2), de
 * TensorFlow 1.14
 * setproctitle
 
-### Note: We recommend using RGN2 primarily for prediction of orphan or de novo proteins. For proteins with known homologs please use AlphaFold2 or OpenFold Colab notebooks.
+### Note: We recommend using RGN2 primarily for prediction of orphan or de novo proteins. For proteins with known homologs we suggest using AlphaFold2 or OpenFold.
 #### AlphaFold2 Colab:https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb
 #### OpenFold Colab: https://colab.research.google.com/github/aqlaboratory/openfold/blob/main/notebooks/OpenFold.ipynb
 
