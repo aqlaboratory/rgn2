@@ -389,11 +389,11 @@ def loop(args):
     session = models['training'].start(models.values())
     global_step = models['training'].current_step(session)
     current_log_step = (global_step // configs['run'].io['prediction_frequency']) + 1
-    log_dir = os.path.join(run_dir, str(current_log_step))
     restart = False
 
     # predict or train depending on set mode behavior
     if args.prediction_only:
+        log_dir = os.path.join(run_dir, '1')
         try:
             while not models['training'].is_done():
                 predict_and_log(log_dir, configs, models, session)
@@ -406,6 +406,7 @@ def loop(args):
             if models['training']._is_started: models['training'].finish(session, save=False)
             stdout_err_file_handle.close()
     else:
+        log_dir = os.path.join(run_dir, str(current_log_step))
         # clean up post last checkpoint residue if any
         if global_step != 0:
             # remove future directories
