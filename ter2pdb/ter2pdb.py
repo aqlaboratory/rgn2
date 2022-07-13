@@ -14,6 +14,8 @@ DIRNAME = Path(__file__).parent.resolve()
 MOD_REF_DIR = DIRNAME / 'ModRefiner-l'
 CA_TRACE_FNAME = 'predicted_ca_trace.pdb'
 EMPR_CA_TRACE_FNAME = 'empredicted_ca_trace.pdb'
+CA_OUTFILE = Path(DIRNAME / CA_TRACE_FNAME)
+EMPR_CA_OUTFILE = Path(DIRNAME / EMPR_CA_TRACE_FNAME)
 
 
 def predicted_ter2pdb(seq_path, ter_path, output_dir=None, seq_id=None):
@@ -55,9 +57,8 @@ def predicted_ter2pdb(seq_path, ter_path, output_dir=None, seq_id=None):
         out.write(txt)
 
     if output_dir is not None:
-        outfile = Path(DIRNAME / CA_TRACE_FNAME)
-        fname = outfile.name if seq_id is None else f'{seq_id}_{outfile.name}'
-        shutil.copy2(str(outfile), os.path.join(output_dir, fname))
+        fname = CA_OUTFILE.name if seq_id is None else f'{seq_id}_{CA_OUTFILE.name}'
+        shutil.copy2(str(CA_OUTFILE), os.path.join(output_dir, fname))
 
 
 def refine(output_dir=None, seq_id=None, timeout=None):
@@ -66,9 +67,9 @@ def refine(output_dir=None, seq_id=None, timeout=None):
         cmd = f'{MOD_REF_DIR / "emrefinement"} {DIRNAME} {MOD_REF_DIR} {CA_TRACE_FNAME} - 1 0'
         proc = subprocess.run(cmd, shell=True, timeout=timeout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-        if proc.returncode != 0:
+        if not EMPR_CA_OUTFILE.exists():
             print(proc.stdout.decode('UTF-8'))
-            raise
+            raise Exception('Refinement failed!')
     except subprocess.TimeoutExpired:
         pass
 
@@ -81,12 +82,14 @@ def refine(output_dir=None, seq_id=None, timeout=None):
     #             shutil.copy2(file, os.path.join(output_dir, fname))
 
     if output_dir is not None:
-        outfile = Path(DIRNAME / EMPR_CA_TRACE_FNAME)
-        fname = outfile.name if seq_id is None else f'{seq_id}_{outfile.name}'
-        shutil.copy2(str(outfile), os.path.join(output_dir, fname))
+        fname = EMPR_CA_OUTFILE.name if seq_id is None else f'{seq_id}_{EMPR_CA_OUTFILE.name}'
+        shutil.copy2(str(EMPR_CA_OUTFILE), os.path.join(output_dir, fname))
 
 
 def run(seq_path, ter_path, output_dir=None, timeout=None, seq_id=None):
+    for filename in Path(DIRNAME).glob('*.pdb'):
+        filename.unlink()
+
     predicted_ter2pdb(seq_path=seq_path, ter_path=ter_path, output_dir=output_dir, seq_id=seq_id)
 
     try:
@@ -99,3 +102,4 @@ if __name__ == '__main__':
     seq = sys.argv[1]
     ter = sys.argv[2]
     run(seq_path=seq, ter_path=ter)
+
