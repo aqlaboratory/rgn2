@@ -231,6 +231,7 @@ def get_args(argv):
                         help="mask out sidechain atoms except for C-Beta, and add C-Beta to glycines")
     parser.add_argument("--seq_replacement", default='',
                         help="Amino acid residue to fill the decoy sequence with. Default keeps target sequence")
+    parser.add_argument("--out_suffix", default='', help="Suffix on PDB output file")
     parser.add_argument("--af2_dir", help="AlphaFold code and weights directory")
     parser.add_argument("--seq_dir", help="FASTA input directory")
     parser.add_argument("--pdb_dir", help="PDB input directory")
@@ -261,7 +262,7 @@ def run_af2rank(args_list):
                   n not in finished_targets}  # key = target name, value = list of Decoy objects
 
     for i, seq_id in enumerate(natives_list):
-        decoy_id = f'{seq_id}_rgn2'
+        decoy_id = f'{seq_id}{args.out_suffix}'
         seq_path = os.path.join(args.seq_dir, f'{seq_id}.fa')
         seq = next(iter(str(seq_record.seq)[:-2] for seq_record in SeqIO.parse(seq_path, 'fasta')))
 
