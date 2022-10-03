@@ -1,7 +1,7 @@
 # make pdb from tertiary
 import os
-import sys
-import glob
+import argparse
+import time
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,8 +13,9 @@ AA = {'A': 'ALA', 'C': 'CYS', 'D': 'ASP', 'E': 'GLU', 'F': 'PHE', 'G': 'GLY', 'H
 DIRNAME = Path(__file__).parent.resolve()
 MOD_REF_DIR = DIRNAME / 'ModRefiner-l'
 CA_TRACE_FNAME = 'predicted_ca_trace.pdb'
-EMPR_CA_TRACE_FNAME = 'empredicted_ca_trace.pdb'
 CA_OUTFILE = Path(DIRNAME / CA_TRACE_FNAME)
+FULL_OUTFILE = Path(DIRNAME / 'fulinit.pdb')
+EMPR_CA_TRACE_FNAME = 'empredicted_ca_trace.pdb'
 EMPR_CA_OUTFILE = Path(DIRNAME / EMPR_CA_TRACE_FNAME)
 
 
@@ -73,20 +74,35 @@ def refine(output_dir=None, seq_id=None, timeout=None):
     except subprocess.TimeoutExpired:
         pass
 
-    # if output_dir is not None:
-    #     files = glob.iglob(os.path.join(DIRNAME, "*.pdb"))
-    #     for file in files:
-    #         outfile = Path(file)
-    #         if outfile.is_file() and outfile.name != CA_TRACE_FNAME:
-    #             fname = f'refine_{outfile.name}' if seq_id is None else f'{seq_id}_refine_{outfile.name}'
-    #             shutil.copy2(file, os.path.join(output_dir, fname))
-
     if output_dir is not None:
         fname = EMPR_CA_OUTFILE.name if seq_id is None else f'{seq_id}_{EMPR_CA_OUTFILE.name}'
         shutil.copy2(str(EMPR_CA_OUTFILE), os.path.join(output_dir, fname))
 
 
-def run(seq_path, ter_path, output_dir=None, timeout=None, seq_id=None):
+def ca_to_allatom(output_dir=None, seq_id=None):
+    try:
+        proc = subprocess.Popen([f'{MOD_REF_DIR / "emrefinement"}', f'{DIRNAME}',
+                                 f'{MOD_REF_DIR}', f'{CA_TRACE_FNAME}', '-', '1', '0'],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+        while 1:
+            if os.path.exists(FULL_OUTFILE):
+                proc.terminate()
+                break
+            time.sleep(0.1)
+
+        if not FULL_OUTFILE.exists():
+            print(proc.stdout.read().decode('UTF-8'))
+            raise Exception('Refinement failed!')
+    except subprocess.TimeoutExpired:
+        pass
+
+    if output_dir is not None:
+        fname = FULL_OUTFILE.name if seq_id is None else f'{seq_id}_{FULL_OUTFILE.name}'
+        shutil.copy2(str(FULL_OUTFILE), os.path.join(output_dir, fname))
+
+
+def run_refine(seq_path, ter_path, output_dir=None, timeout=None, seq_id=None):
     for filename in Path(DIRNAME).glob('*.pdb'):
         filename.unlink()
 
@@ -98,8 +114,21 @@ def run(seq_path, ter_path, output_dir=None, timeout=None, seq_id=None):
         pass
 
 
+def run_ca_to_allatom(seq_path, ter_path, output_dir=None, seq_id=None):
+    for filename in Path(DIRNAME).glob('*.pdb'):
+        filename.unlink()
+
+    predicted_ter2pdb(seq_path=seq_path, ter_path=ter_path, output_dir=output_dir, seq_id=seq_id)
+    ca_to_allatom(output_dir=output_dir, seq_id=seq_id)
+
+
 if __name__ == '__main__':
-    seq = sys.argv[1]
-    ter = sys.argv[2]
-    run(seq_path=seq, ter_path=ter)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("seq_path", help="Path to FASTA file")
+    parser.add_argument("ter_path", help="Path to tertiary file")
+    parser.add_argument("--output_dir", help="Path to output directory")
+    parser.add_argument("--seq_id", help="PDB ID")
+    args = parser.parse_args()
+
+    run_ca_to_allatom(seq_path=args.seq_path, ter_path=args.ter_path, output_dir=args.output_dir, seq_id=args.seq_id)
 
