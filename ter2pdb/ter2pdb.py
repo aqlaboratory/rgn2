@@ -75,6 +75,7 @@ def refine(output_dir=None, seq_id=None, timeout=None):
         pass
 
     if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
         fname = EMPR_CA_OUTFILE.name if seq_id is None else f'{seq_id}_{EMPR_CA_OUTFILE.name}'
         shutil.copy2(str(EMPR_CA_OUTFILE), os.path.join(output_dir, fname))
 
@@ -98,6 +99,7 @@ def ca_to_allatom(output_dir=None, seq_id=None):
         pass
 
     if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
         fname = FULL_OUTFILE.name if seq_id is None else f'{seq_id}_{FULL_OUTFILE.name}'
         shutil.copy2(str(FULL_OUTFILE), os.path.join(output_dir, fname))
 
