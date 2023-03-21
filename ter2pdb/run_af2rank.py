@@ -220,6 +220,7 @@ def get_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("name", help="name to save everything under")
     parser.add_argument("--target_list", nargs='*', help="List of target names to run")
+    parser.add_argument("--target_file", help="File with list of target names to run")
     parser.add_argument("--recycles", type=int, default=1, help="Number of recycles when predicting")
     parser.add_argument("--model_num", type=int, default=1, help="Which AF2 model to use")
     parser.add_argument("--seed", type=int, default=0, help="RNG Seed")
@@ -251,7 +252,11 @@ def run_af2rank(args_list):
     finished_txt = os.path.join(output_pdb_path, "finished_targets.txt")
     os.makedirs(output_pdb_path, exist_ok=True)
 
-    natives_list = args.target_list
+    if args.target_file:
+        with open(args.target_file, 'r') as f:
+            natives_list = f.read().splitlines()
+    else:
+        natives_list = args.target_list
 
     if os.path.exists(finished_txt):
         finished_targets = set(open(finished_txt, 'r').read().split("\n")[:-1])
